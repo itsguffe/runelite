@@ -34,10 +34,12 @@ import java.awt.Color;
 import java.awt.Rectangle;
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
+import java.math.BigInteger;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -183,6 +185,7 @@ public class GroundItemsPlugin extends Plugin
 	private LoadingCache<NamedQuantity, Boolean> hiddenItems;
 	private final Queue<Integer> droppedItemQueue = EvictingQueue.create(16); // recently dropped items
 	private int lastUsedItem;
+	private HashMap<String, Integer> itemAmountMap;
 
 	@Provides
 	GroundItemsConfig provideConfig(ConfigManager configManager)
@@ -213,6 +216,7 @@ public class GroundItemsPlugin extends Plugin
 		hiddenItemList = null;
 		highlightedItemsList = null;
 		collectedGroundItems.clear();
+		itemAmountMap = null;
 	}
 
 	@Subscribe
@@ -426,6 +430,11 @@ public class GroundItemsPlugin extends Plugin
 		// gets the highlighted items from the text box in the config
 		highlightedItemsList = Text.fromCSV(config.getHighlightItems());
 
+		// gets the hidden items with minimum amount from the text box in the config
+		List<String> hiddenItemsAmountList = Text.fromCSV(config.hideAmountUnder());
+
+		populateItemAmountMapFromList(hiddenItemsAmountList);
+
 		highlightedItems = CacheBuilder.newBuilder()
 			.maximumSize(512L)
 			.expireAfterAccess(10, TimeUnit.MINUTES)
@@ -460,6 +469,29 @@ public class GroundItemsPlugin extends Plugin
 		}
 
 		priceChecks = priceCheckBuilder.build();
+	}
+
+	void populateItemAmountMapFromList(List<String> hiddenItemsAmountList)
+	{
+		itemAmountMap = new HashMap<>();
+		for (String curItem: hiddenItemsAmountList) {
+			if (curItem.contains(":"))
+			{
+				String itemAmount[] = curItem.split(":");
+				String itemString = itemAmount[0];
+				String amountString = itemAmount[1];
+				if (amountString.matches("^[+-]?(0|[1-9][0-9]*)$"))
+				{
+					itemAmountMap.put(itemString, convertAmountStringToInt(amountString));
+				}
+			}
+		}
+	}
+
+	int convertAmountStringToInt(String amount)
+	{
+		BigInteger bigIntAmount = new BigInteger(amount);
+		return bigIntAmount.compareTo(BigInteger.valueOf(MAX_QUANTITY)) > 0 ? MAX_QUANTITY : bigIntAmount.intValue();
 	}
 
 	@Subscribe
@@ -583,6 +615,8 @@ public class GroundItemsPlugin extends Plugin
 
 	Color getHidden(NamedQuantity item, int gePrice, int haPrice, boolean isTradeable)
 	{
+		final boolean underMinAmount = itemAmountMap.containsKey(item.getName())
+			&& item.getQuantity() < itemAmountMap.get(item.getName());
 		final boolean isExplicitHidden = TRUE.equals(hiddenItems.getUnchecked(item));
 		final boolean isExplicitHighlight = TRUE.equals(highlightedItems.getUnchecked(item));
 		final boolean canBeHidden = gePrice > 0 || isTradeable || !config.dontHideUntradeables();
@@ -590,7 +624,7 @@ public class GroundItemsPlugin extends Plugin
 		final boolean underHa = haPrice < config.getHideUnderValue();
 
 		// Explicit highlight takes priority over implicit hide
-		return isExplicitHidden || (!isExplicitHighlight && canBeHidden && underGe && underHa)
+		return isExplicitHidden || (!isExplicitHighlight && canBeHidden && underGe && underHa) || underMinAmount
 			? config.hiddenColor()
 			: null;
 	}

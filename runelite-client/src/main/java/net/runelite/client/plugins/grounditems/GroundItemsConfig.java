@@ -403,4 +403,15 @@ public interface GroundItemsConfig extends Config
 	{
 		return false;
 	}
+
+	@ConfigItem(
+			keyName = "hideAmountUnder",
+			name = "Hide amount under",
+			description = "Hides the item if there is under a specific amount of it in the stack",
+			position = 30
+	)
+	default String hideAmountUnder()
+	{
+		return "";
+	}
 }
